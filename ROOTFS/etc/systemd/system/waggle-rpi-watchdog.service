@@ -1,0 +1,11 @@
+[Unit]
+Description=Waggle RPI Watchdog
+
+[Service]
+Restart=always
+RestartSec=15s
+WatchdogSec=3min
+ExecStart=/usr/bin/waggle-rpi-watchdog
+
+[Install]
+WantedBy=multi-user.target
