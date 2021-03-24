@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+import subprocess
+import time
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+last_connection_time = 0
+
+def update_systemd_watchdog():
+    try:
+        subprocess.check_call(["systemd-notify", "WATCHDOG=1"])
+    except subprocess.CalledProcessError:
+        logging.warning("skipping reset of systemd watchdog")
+
+
+def time_now():
+    return time.monotonic()
+
+
+def seconds_since(start):
+    return time.monotonic() - start
+
+def nx_connection_ok():
+    try:
+        return (
+            subprocess.check_output(["ping", "-c", "1", "10.31.81.1"])
+        )
+    except Exception:
+        return False
+
+
+# NOTE Revisit how much of the network stack we should restart. For now, I want to cover all
+# cases of wifi and modems and ssh tunnel issues.
+def restart_network_services():
+    logging.warning("restarting network services")
+
+    # restart network services
+    subprocess.run(
+        [
+            "systemctl",
+            "restart",
+            "NetworkManager",
+        ]
+    )
+
+
+def reboot_os():
+    logging.warning("rebooting the system")
+    # aggressively but safely reboot the system
+    subprocess.run(["systemctl", "--force", "reboot"])
+
+last_connection_time = time_now()
+
+# Recovery actions table [time (s), recovery function]
+# restart networking stack after 15, 20 and 25 of no beehive connectivity
+# reboot after 30 mins of no beehive connectivity
+recovery_actions = [
+    (1800, reboot_os),
+    (1500, restart_network_services),
+    (1200, restart_network_services),
+    (900, restart_network_services),
+]
+
+recovery_actions.sort()
+available_actions=recovery_actions.copy()
+
+while True:
+    update_systemd_watchdog()
+
+    if nx_connection_ok():
+        logging.info("connection ok")
+        last_connection_time = time_now()
+        available_actions=recovery_actions.copy()
+    else:
+        logging.warning(
+            "no connection for %ss", int(seconds_since(last_connection_time))
+        )
+
+    for thresh, action in available_actions:
+        if seconds_since(last_connection_time) >= thresh:
+            logging.warning("executing %ds recovery action", thresh)
+            action()
+            available_actions.remove((thresh, action))
+            break
+
+    time.sleep(15)

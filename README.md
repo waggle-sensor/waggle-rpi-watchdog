@@ -1,1 +1,1 @@
-# waggle-rpi-watchdog
+# waggle-network-watchdog
